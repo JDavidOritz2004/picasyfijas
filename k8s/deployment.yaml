@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: picasyfijas
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: picasyfijas
+  template:
+    metadata:
+      labels:
+        app: picasyfijas
+    spec:
+      containers:
+        - name: picasyfijas
+          image: TU_USUARIO/picasyfijas:1.0
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /juego
+              port: 8000
+          livenessProbe:
+            httpGet:
+              path: /juego
+              port: 8000
