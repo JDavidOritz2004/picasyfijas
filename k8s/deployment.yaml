@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: picasyfijas
-          image: TU_USUARIO/picasyfijas:1.0
+          image: julian0411/picasyfijas:1.0
           ports:
             - containerPort: 8000
           readinessProbe:

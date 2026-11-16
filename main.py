@@ -7,13 +7,13 @@ from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 app = FastAPI(title="Picas y Fijas")
-lock = threading.Lock()          # evita jugadas simultáneas rotas
+lock = threading.Lock()          # evita jugadas simultáneas 
 jugadores = set()                # nombres registrados
 juegos = {}                      # id -> juego
 contador = 0
 
 
-# ---------- Modelos de entrada ----------
+#las entradas
 class LoginIn(BaseModel):
     nombre: str
 
@@ -21,8 +21,7 @@ class NumeroIn(BaseModel):
     nombre: str
     numero: str
 
-
-# ---------- Errores siempre en JSON ----------
+#esto es para los errores del json
 @app.exception_handler(StarletteHTTPException)
 async def http_error(request: Request, exc: StarletteHTTPException):
     return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
@@ -33,7 +32,7 @@ async def validation_error(request: Request, exc: RequestValidationError):
                         content={"error": "JSON inválido o campos faltantes (nombre, numero)"})
 
 
-# ---------- Reglas del juego ----------
+#las reglas
 def validar_numero(n: str):
     if not (n.isascii() and n.isdigit()):
         raise HTTPException(400, "El número debe contener solo dígitos")
@@ -77,7 +76,7 @@ def login(datos: LoginIn):
     nombre = datos.nombre.strip()
     if not nombre:
         raise HTTPException(400, "El nombre no puede estar vacío")
-    jugadores.add(nombre)        # si ya existía, se acepta
+    jugadores.add(nombre)        
     return {"nombre": nombre}
 
 
@@ -93,7 +92,7 @@ def crear_juego(datos: NumeroIn):
             "estado": "por_iniciar",
             "creador": nombre,
             "jugador2": None,
-            "numeros": {nombre: datos.numero},   # secretos, nunca se exponen
+            "numeros": {nombre: datos.numero},   #esto es para que no se vean los numeros del otro
             "turno": None,
             "ganador": None,
             "historial": [],
@@ -127,7 +126,7 @@ def unirse(id: int, datos: NumeroIn):
         j["jugador2"] = nombre
         j["numeros"][nombre] = datos.numero
         j["estado"] = "en_juego"
-        j["turno"] = random.choice([j["creador"], nombre])   # primer turno al azar
+        j["turno"] = random.choice([j["creador"], nombre])  
         return vista(j)
 
 
@@ -160,7 +159,7 @@ def jugar(id: int, datos: NumeroIn):
                 "estado": j["estado"], "turno": j["turno"], "ganador": j["ganador"]}
 
 
-# ---------- Front ----------
+
 @app.get("/", include_in_schema=False)
 def inicio():
     return FileResponse("index.html")
