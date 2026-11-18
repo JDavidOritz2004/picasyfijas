@@ -75,14 +75,14 @@ Todas las peticiones y respuestas usan **JSON**.
 | PUT | `/juego/{id}` | Unirse a un juego (aquí empieza la partida) | `{"nombre": "luis", "numero": "5678"}` |
 | POST | `/juego/{id}/jugar` | Enviar un intento (solo si es tu turno) | `{"nombre": "luis", "numero": "1234"}` |
 | GET | `/juego/{id}` | Ver el estado de un juego, el turno, el historial y el ganador | — |
-| GET | `/juego` | Listar todos los juegos (opcional: `?estado=terminado`) | — |
+| GET | `/juego` | Listar todos los juegos | — |
 | GET | `/` | Abre el front para jugar | — |
 
 **Estados de un juego:** `por_iniciar` (esperando rival), `en_juego` y `terminado` (indica quién ganó).
 
 Los números secretos **nunca** aparecen en las respuestas.
 
-**Códigos de error:** `400` dato inválido · `401` jugador no registrado · `403` no es tu turno o no participas · `404` el juego no existe · `409` el juego ya está lleno, terminado o aún no empieza.
+**Códigos de error:** `400` dato inválido · `401` jugador no registrado · `403` no es tu turno · `404` el juego no existe · `409` el juego ya está lleno, terminado o aún no empieza. Los errores llegan como `{"detail": "mensaje"}`.
 
 > FastAPI genera documentación automática: abre `/docs` para probar todos los endpoints desde el navegador.
 
@@ -222,7 +222,7 @@ Para ver la validación funcionando, prueba con un número inválido:
 
 ```bash
 curl -X POST $URL/juego -H "Content-Type: application/json" -d '{"nombre":"ana","numero":"1123"}'
-# {"error":"El número no puede tener dígitos repetidos"}
+# {"detail":"El número no puede tener dígitos repetidos"}
 ```
 
 ---
