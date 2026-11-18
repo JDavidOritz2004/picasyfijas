@@ -2,122 +2,89 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Picas y Fijas</title>
 <style>
-  body { font-family: system-ui, sans-serif; background: #f4f6fa; color: #222; margin: 0; padding: 20px; }
-  .caja { max-width: 640px; margin: 0 auto; }
-  h1 { color: #1d3a8a; margin-top: 0; }
-  .panel { background: #fff; border: 1px solid #d5dbe6; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
-  h2 { font-size: 1.05rem; margin: 0 0 10px; }
-  input { padding: 8px; font-size: 1rem; border: 1px solid #b8c1d1; border-radius: 6px; width: 140px; }
-  button { padding: 8px 14px; font-size: .95rem; border: 0; border-radius: 6px; background: #1d3a8a; color: #fff; cursor: pointer; }
-  button:disabled { opacity: .4; cursor: not-allowed; }
-  .peq { padding: 4px 10px; font-size: .85rem; }
-  .gris { background: #6b7380; }
-  .item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-top: 1px solid #e5e9f0; }
-  .item:first-child { border-top: 0; }
-  #msg { padding: 10px; border-radius: 6px; margin-bottom: 16px; background: #e3edff; }
-  #msg.error { background: #fbe3e1; color: #9a2b26; }
-  .turno { font-weight: bold; padding: 10px; background: #fff3b0; border-radius: 6px; margin-bottom: 10px; }
-  table { border-collapse: collapse; width: 100%; margin-top: 10px; }
-  td, th { border-bottom: 1px solid #e5e9f0; padding: 6px; text-align: left; }
-  .num { font-family: monospace; font-size: 1.1rem; letter-spacing: 3px; }
+  body { font-family: sans-serif; max-width: 600px; margin: 20px auto; }
+  .panel { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
+  table { width: 100%; }
 </style>
 </head>
 <body>
-<div class="caja">
   <h1>Picas y Fijas</h1>
-  <div id="msg" hidden></div>
+  <p id="msg"></p>
 
-  <div class="panel" id="p1">
-    <h2>1. Tu nombre</h2>
+  <div class="panel">
+    <h3>1. Tu nombre</h3>
     <input id="nombre" placeholder="Nombre">
     <button onclick="entrar()">Entrar</button>
-    <span id="quien"></span>
   </div>
 
   <div class="panel" id="p2" hidden>
-    <h2>2. Tu número secreto (4 cifras distintas)</h2>
-    <input id="secreto" maxlength="4" placeholder="Ej: 4271">
+    <h3>2. Tu número secreto (4 cifras distintas)</h3>
+    <input id="secreto" maxlength="4">
     <button onclick="crear()">Crear juego</button>
-    <p style="margin:8px 0 0;font-size:.9rem">Para unirte a un juego, escribe tu número aquí y pulsa "Unirme" en la lista.</p>
+    <p>Para unirte a un juego, escribe tu número aquí y pulsa "Unirme" en la lista.</p>
   </div>
 
   <div class="panel" id="p3" hidden>
-    <h2>3. Juegos</h2>
+    <h3>3. Juegos</h3>
     <div id="lista"></div>
   </div>
 
   <div class="panel" id="p4" hidden>
-    <h2 id="titulo"></h2>
-    <div class="turno" id="turno"></div>
-    <div id="jugar">
-      <input id="intento" maxlength="4" placeholder="Tu intento">
-      <button id="btnJugar" onclick="jugar()">Probar</button>
-    </div>
+    <h3 id="titulo"></h3>
+    <p id="turno"></p>
+    <input id="intento" maxlength="4" placeholder="Tu intento">
+    <button onclick="jugar()">Probar</button>
     <table>
-      <thead><tr><th>Jugador</th><th>Intento</th><th>Fijas</th><th>Picas</th></tr></thead>
+      <tr><th>Jugador</th><th>Intento</th><th>Fijas</th><th>Picas</th></tr>
       <tbody id="historial"></tbody>
     </table>
   </div>
-</div>
 
 <script>
 const $ = id => document.getElementById(id);
-const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-let yo = "", actual = null;
+let yo = "";        // mi nombre
+let actual = null;  // id del juego que estoy viendo
 
-function aviso(t, error) {
-  $("msg").textContent = t;
-  $("msg").className = error ? "error" : "";
-  $("msg").hidden = false;
-}
-
+// Llama al servidor y, si responde con error, lo muestra en pantalla
 async function api(metodo, url, cuerpo) {
   const r = await fetch(url, {
     method: metodo,
     headers: {"Content-Type": "application/json"},
-    body: cuerpo ? JSON.stringify(cuerpo) : undefined
+    body: JSON.stringify(cuerpo)
   });
   const d = await r.json();
-  if (!r.ok) { aviso(d.error, true); throw new Error(d.error); }
+  if (!r.ok) { $("msg").textContent = "Error: " + d.detail; throw d.detail; }
   return d;
 }
 
 async function entrar() {
   const d = await api("POST", "/login", {nombre: $("nombre").value});
   yo = d.nombre;
-  $("quien").textContent = "Jugando como " + yo;
-  $("p2").hidden = false; $("p3").hidden = false;
-  aviso("Bienvenido, " + yo + ".");
+  $("msg").textContent = "Jugando como " + yo;
+  $("p2").hidden = false;
+  $("p3").hidden = false;
   listar();
 }
 
 async function crear() {
   const j = await api("POST", "/juego", {nombre: yo, numero: $("secreto").value});
-  aviso("Juego #" + j.id + " creado. Espera a que alguien se una.");
   ver(j.id);
 }
 
 async function unirse(id) {
   await api("PUT", "/juego/" + id, {nombre: yo, numero: $("secreto").value});
-  aviso("Te uniste al juego #" + id + ".");
   ver(id);
 }
 
 async function listar() {
   const juegos = await fetch("/juego").then(r => r.json());
-  juegos.reverse();
-  const texto = {por_iniciar: "esperando rival", en_juego: "en juego", terminado: "terminado"};
-  $("lista").innerHTML = juegos.length ? juegos.map(j => `
-    <div class="item">
-      <span>#${j.id} - ${esc(j.creador)} (${texto[j.estado]})${j.ganador ? " - ganó " + esc(j.ganador) : ""}</span>
-      <span>
-        ${j.estado === "por_iniciar" && j.creador !== yo ? `<button class="peq" onclick="unirse(${j.id})">Unirme</button>` : ""}
-        <button class="peq gris" onclick="ver(${j.id})">Ver</button>
-      </span>
-    </div>`).join("") : "Aún no hay juegos.";
+  $("lista").innerHTML = juegos.map(j => `
+    <p>#${j.id} - creado por ${j.creador} (${j.estado})${j.ganador ? " - ganó " + j.ganador : ""}
+      ${j.estado === "por_iniciar" && j.creador !== yo ? `<button onclick="unirse(${j.id})">Unirme</button>` : ""}
+      <button onclick="ver(${j.id})">Ver</button>
+    </p>`).join("");
 }
 
 async function ver(id) {
@@ -125,26 +92,21 @@ async function ver(id) {
   const j = await fetch("/juego/" + id).then(r => r.json());
   $("p4").hidden = false;
   $("titulo").textContent = "Juego #" + j.id + ": " + j.creador + " contra " + (j.jugador2 || "(sin rival)");
-  const mioTurno = j.estado === "en_juego" && j.turno === yo;
-  $("turno").textContent =
-    j.estado === "por_iniciar" ? "Esperando a que otro jugador se una." :
-    j.estado === "terminado" ? "Terminó. Ganó " + j.ganador + "." :
-    mioTurno ? "Es tu turno." : "Turno de " + j.turno + ".";
-  $("jugar").hidden = j.estado !== "en_juego";
-  $("btnJugar").disabled = !mioTurno;
-  $("historial").innerHTML = j.historial.map(h => `
-    <tr><td>${esc(h.jugador)}</td><td class="num">${esc(h.intento)}</td><td>${h.fijas}</td><td>${h.picas}</td></tr>`).join("");
-  listar();
+  if (j.estado === "por_iniciar") $("turno").textContent = "Esperando a que otro jugador se una.";
+  else if (j.estado === "terminado") $("turno").textContent = "Terminó. Ganó " + j.ganador + ".";
+  else $("turno").textContent = "Turno de " + j.turno + ".";
+  $("historial").innerHTML = j.historial.map(h =>
+    `<tr><td>${h.jugador}</td><td>${h.intento}</td><td>${h.fijas}</td><td>${h.picas}</td></tr>`).join("");
 }
 
 async function jugar() {
   const r = await api("POST", "/juego/" + actual + "/jugar", {nombre: yo, numero: $("intento").value});
   $("intento").value = "";
-  aviso(r.ganador ? "¡Ganó " + r.ganador + "!" : "Resultado: " + r.fijas + " fijas y " + r.picas + " picas.");
+  $("msg").textContent = r.ganador ? "¡Ganó " + r.ganador + "!" : r.fijas + " fijas y " + r.picas + " picas.";
   ver(actual);
 }
 
-// Se actualiza solo cada 3 segundos
+// Cada 3 segundos se actualiza la lista y el juego abierto
 setInterval(() => { if (yo) { listar(); if (actual) ver(actual); } }, 3000);
 </script>
 </body>

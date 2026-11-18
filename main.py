@@ -1,19 +1,16 @@
 import random
-import threading
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from starlette.exceptions import HTTPException as StarletteHTTPException
 
 app = FastAPI(title="Picas y Fijas")
-lock = threading.Lock()          # evita jugadas simultáneas 
-jugadores = set()                # nombres registrados
-juegos = {}                      # id -> juego
+jugadores = set()   # nombres registrados
+juegos = {}         # id -> juego (lo que se muestra a todos)
+secretos = {}       # (id, nombre) -> número secreto (nunca se muestra)
 contador = 0
 
 
-#las entradas
+# Datos que llegan en el JSON
 class LoginIn(BaseModel):
     nombre: str
 
@@ -21,20 +18,10 @@ class NumeroIn(BaseModel):
     nombre: str
     numero: str
 
-#esto es para los errores del json
-@app.exception_handler(StarletteHTTPException)
-async def http_error(request: Request, exc: StarletteHTTPException):
-    return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
 
-@app.exception_handler(RequestValidationError)
-async def validation_error(request: Request, exc: RequestValidationError):
-    return JSONResponse(status_code=400,
-                        content={"error": "JSON inválido o campos faltantes (nombre, numero)"})
-
-
-#las reglas
+# Reglas del juego
 def validar_numero(n: str):
-    if not (n.isascii() and n.isdigit()):
+    if not n.isdigit():
         raise HTTPException(400, "El número debe contener solo dígitos")
     if len(n) != 4:
         raise HTTPException(400, "El número debe tener exactamente 4 dígitos")
@@ -46,120 +33,94 @@ def calcular(secreto: str, intento: str):
     picas = len(set(secreto) & set(intento)) - fijas
     return fijas, picas
 
-def exigir_registrado(nombre: str) -> str:
-    nombre = nombre.strip()
+def exigir_registrado(nombre: str):
     if nombre not in jugadores:
         raise HTTPException(401, "Jugador no registrado. Haz login primero")
-    return nombre
 
 def obtener_juego(id: int):
     if id not in juegos:
         raise HTTPException(404, "El juego no existe")
     return juegos[id]
 
-def vista(j: dict) -> dict:
-    """Versión pública: NUNCA incluye los números secretos."""
-    return {
-        "id": j["id"],
-        "estado": j["estado"],
-        "creador": j["creador"],
-        "jugador2": j["jugador2"],
-        "turno": j["turno"],
-        "ganador": j["ganador"],
-        "historial": j["historial"],
-    }
 
-
-# ---------- Endpoints ----------
-@app.post("/login", status_code=201)
+# Endpoints
+@app.post("/login")
 def login(datos: LoginIn):
-    nombre = datos.nombre.strip()
-    if not nombre:
+    if not datos.nombre:
         raise HTTPException(400, "El nombre no puede estar vacío")
-    jugadores.add(nombre)        
-    return {"nombre": nombre}
+    jugadores.add(datos.nombre)
+    return {"nombre": datos.nombre}
 
 
-@app.post("/juego", status_code=201)
+@app.post("/juego")
 def crear_juego(datos: NumeroIn):
     global contador
-    with lock:
-        nombre = exigir_registrado(datos.nombre)
-        validar_numero(datos.numero)
-        contador += 1
-        juegos[contador] = {
-            "id": contador,
-            "estado": "por_iniciar",
-            "creador": nombre,
-            "jugador2": None,
-            "numeros": {nombre: datos.numero},   #esto es para que no se vean los numeros del otro
-            "turno": None,
-            "ganador": None,
-            "historial": [],
-        }
-        return vista(juegos[contador])
+    exigir_registrado(datos.nombre)
+    validar_numero(datos.numero)
+    contador += 1
+    juegos[contador] = {
+        "id": contador,
+        "estado": "por_iniciar",
+        "creador": datos.nombre,
+        "jugador2": None,
+        "turno": None,
+        "ganador": None,
+        "historial": [],
+    }
+    secretos[(contador, datos.nombre)] = datos.numero
+    return juegos[contador]
 
 
 @app.get("/juego")
-def listar_juegos(estado: str | None = None):
-    lista = [vista(j) for j in juegos.values()]
-    if estado:
-        lista = [j for j in lista if j["estado"] == estado]
-    return lista
+def listar_juegos():
+    return list(juegos.values())
 
 
 @app.get("/juego/{id}")
 def ver_juego(id: int):
-    return vista(obtener_juego(id))
+    return obtener_juego(id)
 
 
 @app.put("/juego/{id}")
 def unirse(id: int, datos: NumeroIn):
-    with lock:
-        nombre = exigir_registrado(datos.nombre)
-        j = obtener_juego(id)
-        if j["estado"] != "por_iniciar":
-            raise HTTPException(409, "El juego ya está lleno o terminado")
-        if nombre == j["creador"]:
-            raise HTTPException(409, "No puedes unirte a tu propio juego")
-        validar_numero(datos.numero)
-        j["jugador2"] = nombre
-        j["numeros"][nombre] = datos.numero
-        j["estado"] = "en_juego"
-        j["turno"] = random.choice([j["creador"], nombre])  
-        return vista(j)
+    exigir_registrado(datos.nombre)
+    j = obtener_juego(id)
+    if j["estado"] != "por_iniciar":
+        raise HTTPException(409, "El juego ya está lleno o terminado")
+    if datos.nombre == j["creador"]:
+        raise HTTPException(409, "No puedes unirte a tu propio juego")
+    validar_numero(datos.numero)
+    j["jugador2"] = datos.nombre
+    secretos[(id, datos.nombre)] = datos.numero
+    j["estado"] = "en_juego"
+    j["turno"] = random.choice([j["creador"], datos.nombre])  # el primero se sortea
+    return j
 
 
 @app.post("/juego/{id}/jugar")
 def jugar(id: int, datos: NumeroIn):
-    with lock:
-        nombre = exigir_registrado(datos.nombre)
-        j = obtener_juego(id)
-        if nombre not in (j["creador"], j["jugador2"]):
-            raise HTTPException(403, "No participas en este juego")
-        if j["estado"] == "por_iniciar":
-            raise HTTPException(409, "Aún falta el segundo jugador")
-        if j["estado"] == "terminado":
-            raise HTTPException(409, "El juego ya terminó")
-        if j["turno"] != nombre:
-            raise HTTPException(403, "No es tu turno")
-        validar_numero(datos.numero)
+    exigir_registrado(datos.nombre)
+    j = obtener_juego(id)
+    if j["estado"] != "en_juego":
+        raise HTTPException(409, "El juego no está en curso")
+    if j["turno"] != datos.nombre:
+        raise HTTPException(403, "No es tu turno")
+    validar_numero(datos.numero)
 
-        rival = j["jugador2"] if nombre == j["creador"] else j["creador"]
-        fijas, picas = calcular(j["numeros"][rival], datos.numero)
-        j["historial"].append({"jugador": nombre, "intento": datos.numero,
-                               "fijas": fijas, "picas": picas})
-        if fijas == 4:
-            j["estado"] = "terminado"
-            j["ganador"] = nombre
-            j["turno"] = None
-        else:
-            j["turno"] = rival
-        return {"fijas": fijas, "picas": picas,
-                "estado": j["estado"], "turno": j["turno"], "ganador": j["ganador"]}
+    rival = j["jugador2"] if datos.nombre == j["creador"] else j["creador"]
+    fijas, picas = calcular(secretos[(id, rival)], datos.numero)
+    j["historial"].append({"jugador": datos.nombre, "intento": datos.numero,
+                           "fijas": fijas, "picas": picas})
+    if fijas == 4:
+        j["estado"] = "terminado"
+        j["ganador"] = datos.nombre
+        j["turno"] = None
+    else:
+        j["turno"] = rival
+    return {"fijas": fijas, "picas": picas,
+            "estado": j["estado"], "turno": j["turno"], "ganador": j["ganador"]}
 
 
-
-@app.get("/", include_in_schema=False)
+@app.get("/")
 def inicio():
     return FileResponse("index.html")
